@@ -1,0 +1,434 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>FSL Recognition</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; background: #f4f4f4; padding: 20px; }
+    h1 { text-align: center; color: #333; margin-bottom: 8px; }
+    .tabs { display: flex; justify-content: center; gap:8px; margin-bottom: 16px; flex-wrap:wrap; }
+    .tab-button { padding: 10px 18px; border: none; background: #ddd; cursor: pointer; font-size: 15px; border-radius:6px; }
+    .tab-button.active { background: #a64ca6; color: white; font-weight: bold; }
+    .tab-content { display: none; background: white; padding: 18px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.08); max-width: 980px; margin: 0 auto;}
+    .tab-content.active { display: block; }
+    img.stream, video.stream { border: 2px solid #333; border-radius: 8px; width: 480px; height: 360px; background: black; object-fit: cover; display:block; }
+    .placeholder { width: 480px; height: 360px; display:flex; align-items:center; justify-content:center; border: 2px dashed #888; border-radius:8px; color:#666; font-size:18px; background:white }
+    .controls-row { display:flex; gap:8px; align-items:center; margin-top:8px; flex-wrap:wrap; }
+    button, select { margin: 6px; padding: 8px 12px; font-size: 15px; cursor: pointer; border-radius:6px; }
+    .small { font-size: 13px; padding:6px 10px; }
+    pre { white-space: pre-wrap; word-wrap: break-word; font-size:14px; }
+    #speechNote { color:#666; font-size:14px; margin-top:8px; }
+    .controls-center { display:flex; gap:10px; justify-content:center; align-items:center; margin-top:10px; }
+  </style>
+</head>
+<body>
+  <h1>BRIDGE: A Filipino Sign Language Translator</h1>
+
+  <div class="tabs">
+    <button class="tab-button active" data-tab="live">Live Recognition</button>
+    <button class="tab-button" data-tab="realtime">Realtime Phrase</button>
+    <button class="tab-button" data-tab="speech">Speech → FSL</button>
+  </div>
+
+  <!-- Live -->
+  <div id="live" class="tab-content active">
+    <h2>Alphabet / Number Recognition</h2>
+    <div style="display:flex; gap:20px; align-items:center;">
+      <div>
+        <label for="modelSelect">Select Model:</label>
+        <select id="modelSelect">
+          <option value="alphabet">Alphabet</option>
+          <option value="number">Number</option>
+        </select>
+        <button id="loadModelBtn">Load Model</button>
+      </div>
+
+      <div style="margin-left:auto;">
+        <button id="startLiveBtn">Start Live</button>
+        <button id="stopLiveBtn">Stop Live</button>
+      </div>
+    </div>
+
+    <div style="margin-top:12px; display:flex; gap:20px; align-items:flex-start;">
+      <div>
+        <img id="videoStream" class="stream" alt="Live stream" style="display:none" />
+        <div id="livePlaceholder" class="placeholder" style="display:flex">Camera stopped — Click Start</div>
+      </div>
+      <div style="flex:1;">
+        <strong>Live Feedback</strong>
+        <div id="liveInfo" style="margin-top:8px; background:#fafafa; padding:10px; border-radius:6px; border:1px solid #eee;">
+          Predictions and landmark overlays appear on the live stream.
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Realtime -->
+  <div id="realtime" class="tab-content">
+    <h2>Realtime Phrase Translation (LSTM)</h2>
+    <div style="display:flex; gap:20px; align-items:flex-start;">
+      <div>
+        <img id="realtimeStream" class="stream" alt="Realtime stream" style="display:none" />
+        <div id="realtimePlaceholder" class="placeholder" style="display:block">Realtime stopped — Click Start</div>
+        <div style="margin-top:8px;">
+          <button id="startRealtimeBtn">Start Realtime</button>
+          <button id="stopRealtimeBtn">Stop Realtime</button>
+        </div>
+      </div>
+
+      <div style="flex:1;">
+        <strong>Realtime Prediction</strong>
+        <pre id="realtimeOutput" style="margin-top:8px; background:#fafafa; padding:10px; border-radius:6px; border:1px solid #eee;">Waiting for predictions...</pre>
+      </div>
+    </div>
+  </div>
+
+  <!-- Speech -> FSL -->
+  <div id="speech" class="tab-content">
+    <h2>Speech → FSL (Web Speech API)</h2>
+    <p><strong>How it works:</strong> Press <em>Start Listening</em>, speak a phrase (e.g., <em>kumusta ka</em>) or a word to spell. After recognition, press <em>Show Translation</em> to view the FSL animation or letter slideshow. To spell a sentence, speak the sentence; spaces are shown as a blank white frame. Press <em>Close</em> to finish and enable a new recording.</p>
+
+    <div class="controls-row">
+      <button id="startListenBtn">Start Listening</button>
+      <button id="stopListenBtn" disabled>Stop Listening</button>
+      <button id="showTranslationBtn" disabled>Show Translation</button>
+      <span id="listeningStatus" style="margin-left:10px">Idle</span>
+    </div>
+
+    <div style="margin-top:12px;">
+      <strong>Recognized text:</strong>
+      <div id="recognizedText" style="background:#fff; padding:10px; border:1px solid #ccc; width:480px; min-height:40px;">(nothing yet)</div>
+    </div>
+
+    <div id="fslPlayback" style="margin-top:14px;">
+      <!-- phrase video playback -->
+      <video id="fslVideo" class="stream" controls style="display:none;"></video>
+
+      <!-- letter playback area -->
+      <div id="letterArea" style="display:none; text-align:center;">
+        <img id="letterImg" class="stream" alt="Letter image" />
+        <div class="controls-row" style="justify-content:center; margin-top:8px;">
+          <button id="prevLetter" class="small">Prev</button>
+          <button id="nextLetter" class="small">Next</button>
+          <button id="closePlayback" class="small">Close</button>
+        </div>
+        <div id="letterCounter" style="text-align:center; margin-top:6px; color:#333"></div>
+      </div>
+    </div>
+
+    <div id="speechNote">After you close the displayed translation, press Start Listening again to record another phrase.</div>
+  </div>
+
+<script>
+  // helper: stop all cameras (used when switching tabs or launching speech)
+  async function stopAllCameras() {
+    try {
+      await fetch('/stop_camera/live', { method: 'POST' }).catch(()=>{});
+      await fetch('/stop_camera/realtime', { method: 'POST' }).catch(()=>{});
+    } catch (e) {}
+  }
+
+  // Tab switching with camera control
+  const tabs = document.querySelectorAll('.tab-button');
+  tabs.forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const tabId = btn.dataset.tab;
+      // Stop other camera owners
+      const others = Array.from(tabs).filter(b => b !== btn).map(b => b.dataset.tab);
+      for (const o of others) {
+        try { await fetch(`/stop_camera/${o}`, { method: 'POST' }); } catch(e) {}
+      }
+      // activate tab
+      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+      document.querySelectorAll('.tab-button').forEach(b => b.classList.remove('active'));
+      document.getElementById(tabId).classList.add('active');
+      btn.classList.add('active');
+    });
+  });
+
+  // ---------------- Live controls ----------------
+  const videoStream = document.getElementById('videoStream');
+  const livePlaceholder = document.getElementById('livePlaceholder');
+  document.getElementById('loadModelBtn').addEventListener('click', async () => {
+    const modelType = document.getElementById('modelSelect').value;
+    try {
+      const r = await fetch(`/load_model/${modelType}`);
+      const j = await r.json();
+      if (j.success) alert(`${modelType} model loaded`);
+      else alert('Load failed');
+    } catch (e) { alert('Request failed: ' + e); }
+  });
+
+  document.getElementById('startLiveBtn').addEventListener('click', async () => {
+    const res = await fetch('/start_camera/live', { method: 'POST' }).then(r=>r.json());
+    if (!res.success) { alert('Cannot start live: ' + (res.message||res.error)); return; }
+    // show stream
+    videoStream.src = '/video_feed';
+    videoStream.style.display = 'block';
+    livePlaceholder.style.display = 'none';
+  });
+
+  document.getElementById('stopLiveBtn').addEventListener('click', async () => {
+    await fetch('/stop_camera/live', { method: 'POST' }).then(()=>{});
+    videoStream.src = '';
+    videoStream.style.display = 'none';
+    livePlaceholder.style.display = 'flex';
+  });
+
+  // ---------------- Realtime controls ----------------
+  const realtimeStream = document.getElementById('realtimeStream');
+  const realtimePlaceholder = document.getElementById('realtimePlaceholder');
+  let realtimeInterval = null;
+
+  document.getElementById('startRealtimeBtn').addEventListener('click', async () => {
+    const res = await fetch('/start_camera/realtime', { method: 'POST' }).then(r=>r.json());
+    if (!res.success) { alert('Cannot start realtime: ' + (res.message||res.error)); return; }
+    realtimeStream.src = '/realtime_feed';
+    realtimeStream.style.display = 'block';
+    realtimePlaceholder.style.display = 'none';
+    startRealtimePolling();
+  });
+
+  document.getElementById('stopRealtimeBtn').addEventListener('click', async () => {
+    await fetch('/stop_camera/realtime', { method: 'POST' }).then(()=>{});
+    realtimeStream.src = '';
+    realtimeStream.style.display = 'none';
+    realtimePlaceholder.style.display = 'flex';
+    stopRealtimePolling();
+  });
+
+  function startRealtimePolling() {
+    if (realtimeInterval) return;
+    realtimeInterval = setInterval(async () => {
+      try {
+        const r = await fetch('/realtime_result').then(r=>r.json());
+        if (r && r.prediction) {
+          document.getElementById('realtimeOutput').textContent = `Prediction: ${r.prediction}\nConfidence: ${(r.confidence*100).toFixed(1)}%`;
+        } else {
+          document.getElementById('realtimeOutput').textContent = 'Waiting for predictions...';
+        }
+      } catch (e) {}
+    }, 1200);
+  }
+  function stopRealtimePolling() {
+    if (realtimeInterval) {
+      clearInterval(realtimeInterval);
+      realtimeInterval = null;
+    }
+  }
+
+  // ---------------- Speech -> FSL (Web Speech API) ----------------
+  const startListenBtn = document.getElementById('startListenBtn');
+  const stopListenBtn  = document.getElementById('stopListenBtn');
+  const showTranslationBtn = document.getElementById('showTranslationBtn');
+  const listeningStatus = document.getElementById('listeningStatus');
+  const recognizedTextDiv = document.getElementById('recognizedText');
+
+  const fslVideo = document.getElementById('fslVideo');
+  const letterArea = document.getElementById('letterArea');
+  const letterImg = document.getElementById('letterImg');
+  const prevLetterBtn = document.getElementById('prevLetter');
+  const nextLetterBtn = document.getElementById('nextLetter');
+  const closePlaybackBtn = document.getElementById('closePlayback');
+  const letterCounter = document.getElementById('letterCounter');
+
+  let recognition = null;
+  let lastRecognized = '';
+  let fslMap = {};         // server-provided mapping: { 'a': 'a.jpg', 'kumusta ka': 'kumusta_ka.mp4', ... }
+  let spelledItems = [];   // sequence of filenames or '__SPACE__' or null (missing)
+  let currentIndex = 0;
+
+  // load mapping from server
+  async function loadFslMap() {
+    try {
+      const r = await fetch('/fsl_map').then(r=>r.json());
+      fslMap = r || {};
+      console.log('fsl_map loaded', fslMap);
+    } catch (e) {
+      console.warn('fsl_map fetch failed', e);
+    }
+  }
+  loadFslMap();
+
+  // Web Speech API setup
+  function setupRecognition() {
+    const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SpeechRecognition) {
+      listeningStatus.textContent = 'Web Speech API not supported';
+      startListenBtn.disabled = true;
+      return;
+    }
+    recognition = new SpeechRecognition();
+    recognition.lang = 'fil-PH';
+    recognition.interimResults = false;
+    recognition.maxAlternatives = 1;
+
+    recognition.onstart = () => {
+      listeningStatus.textContent = 'Listening...';
+      startListenBtn.disabled = true;
+      stopListenBtn.disabled = false;
+    };
+    recognition.onend = () => {
+      listeningStatus.textContent = 'Idle';
+      startListenBtn.disabled = false;
+      stopListenBtn.disabled = true;
+    };
+    recognition.onerror = (e) => {
+      listeningStatus.textContent = 'Error: ' + (e.error || e.message || '');
+      startListenBtn.disabled = false;
+      stopListenBtn.disabled = true;
+    };
+    recognition.onresult = ev => {
+      const txt = ev.results[0][0].transcript || '';
+      lastRecognized = txt;
+      recognizedTextDiv.textContent = txt;
+      showTranslationBtn.disabled = false;
+      listeningStatus.textContent = 'Recognized';
+    };
+  }
+  setupRecognition();
+
+  startListenBtn.addEventListener('click', async () => {
+    // stop cameras to avoid conflict
+    await stopAllCameras();
+    // reset UI
+    recognizedTextDiv.textContent = '(listening...)';
+    lastRecognized = '';
+    showTranslationBtn.disabled = true;
+    hidePlayback();
+    // start recognition
+    if (!recognition) { setupRecognition(); if (!recognition) return alert('Speech recognition unavailable'); }
+    try { recognition.start(); } catch (e) { console.warn('recognition.start err', e); }
+  });
+
+  stopListenBtn.addEventListener('click', () => {
+    if (recognition) recognition.stop();
+    listeningStatus.textContent = 'Stopped';
+  });
+
+  function sanitizeToLettersAndSpaces(s) {
+    return (s || '').toLowerCase().replace(/[^a-z\s]/g, '');
+  }
+
+  // show translation after recognition
+  showTranslationBtn.addEventListener('click', async () => {
+    const txt = (lastRecognized || '').trim();
+    if (!txt) return alert('Nothing recognized. Press Start Listening and speak.');
+    const normalized = txt.toLowerCase();
+
+    // direct phrase check (exact phrase)
+    if (normalized.includes('kumusta') && normalized.includes('ka')) {
+      // use mapped phrase asset if present
+      const vid = fslMap['kumusta ka'] || fslMap['kumusta_ka'] || fslMap['kumusta-ka'];
+      if (vid) {
+        showVideo(vid);
+      } else {
+        alert('Phrase video for "kumusta ka" not found on server.');
+      }
+      return;
+    }
+
+    // otherwise: spell the phrase letter-by-letter including spaces
+    const sanitized = sanitizeToLettersAndSpaces(txt);
+    if (!sanitized.trim()) return alert('No letters to spell.');
+
+    spelledItems = [];
+    for (const ch of sanitized) {
+      if (ch === ' ') {
+        spelledItems.push('__SPACE__'); // blank white frame placeholder
+      } else {
+        // server-side mapping: letter filenames are just 'a.jpg', 'b.jpg', ...
+        const candidate = fslMap[ch]; // e.g. fslMap['a'] === 'a.jpg'
+        if (candidate) spelledItems.push(candidate);
+        else spelledItems.push(null); // missing image
+      }
+    }
+
+    if (spelledItems.length === 0) return alert('No letter images found on server.');
+    currentIndex = 0;
+    showLetterArea();
+  });
+
+  function hidePlayback() {
+    fslVideo.style.display = 'none';
+    fslVideo.pause();
+    fslVideo.src = '';
+    letterArea.style.display = 'none';
+    letterImg.src = '';
+    letterImg.style.background = '';
+    letterCounter.textContent = '';
+  }
+
+  function showVideo(filename) {
+    hidePlayback();
+    fslVideo.src = `/fsl_video/${encodeURIComponent(filename)}`;
+    fslVideo.style.display = 'block';
+    fslVideo.play().catch(()=>{ /* may require user gesture */ });
+  }
+
+  function showLetterArea() {
+    hidePlayback();
+    letterArea.style.display = 'block';
+    updateLetterDisplay();
+  }
+
+  function updateLetterDisplay() {
+    if (!spelledItems || spelledItems.length === 0) return;
+    const item = spelledItems[currentIndex];
+    letterCounter.textContent = `Item ${currentIndex+1} of ${spelledItems.length}`;
+    if (item === '__SPACE__') {
+      // blank white frame: set src to empty and background white; do not auto-advance
+      letterImg.src = '';
+      letterImg.style.background = '#fff';
+      letterImg.alt = 'blank (space)';
+    } else if (!item) {
+      // missing image indicator
+      letterImg.src = '';
+      letterImg.style.background = '#f8d7da'; // pinkish for missing
+      letterImg.alt = 'missing';
+    } else {
+      letterImg.style.background = 'black';
+      letterImg.src = `/fsl_letter/${encodeURIComponent(item)}`;
+      letterImg.alt = item;
+    }
+  }
+
+  prevLetterBtn.addEventListener('click', () => {
+    if (!spelledItems || spelledItems.length === 0) return;
+    currentIndex = Math.max(0, currentIndex - 1);
+    updateLetterDisplay();
+  });
+  nextLetterBtn.addEventListener('click', () => {
+    if (!spelledItems || spelledItems.length === 0) return;
+    currentIndex = Math.min(spelledItems.length - 1, currentIndex + 1);
+    updateLetterDisplay();
+  });
+
+  closePlaybackBtn.addEventListener('click', () => {
+    hidePlayback();
+    recognizedTextDiv.textContent = '(nothing yet)';
+    lastRecognized = '';
+    showTranslationBtn.disabled = true;
+    loadFslMap(); // refresh available assets
+  });
+
+  // disable Stop/Show at load
+  document.getElementById('stopListenBtn').disabled = true;
+  showTranslationBtn.disabled = true;
+
+  // stop cameras when switching to speech
+  document.querySelector('[data-tab="speech"]').addEventListener('click', async () => {
+    await stopAllCameras();
+  });
+
+  // on unload, stop cameras
+  window.addEventListener('beforeunload', async () => {
+    try {
+      await fetch('/stop_camera/live', { method: 'POST' });
+      await fetch('/stop_camera/realtime', { method: 'POST' });
+    } catch (e) {}
+  });
+</script>
+</body>
+</html>

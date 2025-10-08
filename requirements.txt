@@ -1,12 +1,14 @@
 # Python Version 3.9.12
 
-tensorflow==2.10.0
+tensorflow==2.15.0
 mediapipe==0.10.20 
-protobuf==3.19.6
-opencv-python==4.7.0.68
+protobuf==4.25.3
+opencv-python==4.9.0.80
 scikit-learn==1.5.1
-numpy<2
+numpy==1.26.4
 flask==2.2.5
 joblib==1.4.2
 
 gunicorn==21.2.0
+
+
